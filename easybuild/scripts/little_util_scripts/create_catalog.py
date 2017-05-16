@@ -2,51 +2,97 @@
 from __future__ import print_function
 import sys
 import os
-import time
+# import time
 import pwd
-from easybuild.framework.easyconfig.format.format import Dependency
-from easybuild.framework.easyconfig.format.version import EasyVersion
-from easybuild.framework.easyconfig.parser import EasyConfigParser
-
+import logging
 import argparse
+
+try:
+    # from easybuild.framework.easyconfig.format.format import Dependency
+    # from easybuild.framework.easyconfig.format.version import EasyVersion
+    from easybuild.framework.easyconfig.parser import EasyConfigParser
+except ImportError:
+    if 'EBROOTEASYBUILD' in os.environ:
+        print('CRITICAL: EasyBuild was loaded as module, but ' + sys.argv[0]
+              + ' failed to import Python API modules:',
+              file=sys.stderr
+              )
+        raise
+    else:
+        print('CRITICAL: EasyBuild was not loaded as module.', file=sys.stderr)
+        print('CRITICAL: Try', file=sys.stderr)
+        print('              module load EasyBuild', file=sys.stderr)
+        print('          before running ' + sys.argv[0] + '.', file=sys.stderr)
+        sys.exit(1)
+
 #
-# This program makes a database of all software installed by EasyBuild. 
-# It walks the directory tree starting by default at EASYBUILD_INSTALLPATH.
-# The EasyBuild module should be loaded ahead of running.
-# All files *.eb are parsed 
+# This program creates a (flatfile) "catalog" of all software installed by EasyBuild.
+# It walks the directory tree recursively starting by default at EASYBUILD_INSTALLPATH
+# and parses any *.eb files found.
+# The EasyBuild module should be loaded before executing this script.
 #
-# It is useful to copy the resulting output in a common accessible location 
-# For use by other scripts such as:
-#                query_toolchain.py       --- lists toolchain module for some
-#                                               software/ version
+# It is useful to store the catalog in a location accessible for all users.
+# The flatfile catalog can be used by other scripts such as:
+#                query_toolchain.py       --- lists toolchain for some
+#                                               software/version
 #                query_dependency.py      --- reverse dependency lookup
 #                ec_manager.py            --- manages easyconfig collections
-#                find_not_dependency.py   --- lists programs that are not 
+#                find_not_dependency.py   --- lists programs that are not
 #                                                dependencies of any others
-# EB Gregory 25 Feb 2015
+# Based on original script from EB Gregory 25 Feb 2015
+#
 
 
 def main():
-
-    if 'EASYBUILD_INSTALLPATH' in os.environ:
-        top_default = os.environ['EASYBUILD_INSTALLPATH']+'/software/'
+    #
+    # Get commandline options.
+    #
+    if 'EASYBUILD_SUBDIR_SOFTWARE' in os.environ:
+        easybuild_subdir_software = os.environ['EASYBUILD_SUBDIR_SOFTWARE']
     else:
-        print ("Please define the environment variable EASYBUILD_INSTALLPATH "
-               "as the EasyBuild install path root, or give a search path "
-               "with the -t TOPDIR command line argument.")
-        sys.exit()
-
-    # get arguments
-    parser = argparse.ArgumentParser(description="Builds a catalog of software "
-                                     "installed by easybuild. Currently does "
-                                     "not list versions of Easybuild.")
-    parser.add_argument("-t", "--topdir", help="the top directory for "
-                        "beginning the search for installed software",
-                        default=top_default)
+        easybuild_subdir_software = 'software'  # default
+    if 'EASYBUILD_INSTALLPATH' in os.environ:
+        default_top_dir = os.environ['EASYBUILD_INSTALLPATH'] + '/' \
+                          + easybuild_subdir_software + '/'
+    else:
+        default_top_dir = None
+    parser = argparse.ArgumentParser(
+        description='Builds a catalog of software installed by EasyBuild.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-t', '--topdir',
+                        help='Top directory to search recursively for installed software.',
+                        default=default_top_dir)
+    parser.add_argument('-c', '--catalog',
+                        help='Catalog flatfile where list of installed software will be saved.',
+                        default='installed_with_easybuild.catalog')
+    parser.add_argument('-l', '--loglevel',
+                        help='Log level. One of DEBUG, INFO, WARNING, ERROR or CRITICAL',
+                        default='INFO')
     args = parser.parse_args()
-
+    #
+    # Configure logging.
+    #
+    loglevel = args.loglevel
+    numeric_level = getattr(logging, args.loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('CRITICAL: Invalid log level: %s' % loglevel)
+    logging.basicConfig(stream=sys.stdout,
+                        # level=logging.INFO,
+                        level=numeric_level,
+                        format='%(filename)s:%(lineno)s %(levelname)s:%(message)s')
+    logging.info('Started...')
+    #
+    # Get topdir.
+    #
     top = args.topdir
-
+    if os.path.isdir(top):
+        logging.info('Searching for installed easyconfigs in ' + top + '...')
+    else:
+        logging.critical('Please define the environment variable EASYBUILD_INSTALLPATH '
+                         'or provide a search path with the -t TOPDIR command line argument.')
+        sys.exit(2)
+    
     exten = '.eb'
     applications = []
 
@@ -65,9 +111,11 @@ def main():
 
                 app_dict = parse_eb_file(eb_file)
 
-                applications.append(app_dict)
-
-                num_apps += 1
+                if app_dict is None:
+                    logging.warning("Failed to parse: {0}".format(eb_file))
+                else:
+                    applications.append(app_dict)
+                    num_apps += 1
 
     applications.sort(key=by_name_vers)
 
@@ -96,8 +144,12 @@ def main():
                     dep_vers_suffix = app_deps[i][2]
 
                 if len(app_deps[i]) > 3:
-                    dep_tc = app_deps[i][3][0]
-                    dep_tc_vers = app_deps[i][3][1]
+                    if app_deps[i][3] is True:
+                        dep_tc = 'dummy'
+                        dep_tc_vers = '-'
+                    else:
+                        dep_tc = app_deps[i][3][0]
+                        dep_tc_vers = app_deps[i][3][1]
 
                 dep_vers = dep_vers+dep_vers_suffix
                 print("\tDEP {0}\t{1}\t{2}\t{3}".format(
@@ -120,11 +172,24 @@ def parse_eb_file(eb_file):
 
     name = ec.get('name')
     vers = ec.get('version')
+
+    logging.debug("Parsing EasyConfig {0}\t{1}".format(name, vers))
+
     tc_name = ec.get('toolchain', dict()).get('name')
     tc_vers = ec.get('toolchain', dict()).get('version')
 
-    if ((not name) or (not vers) or (not tc_name) or (not tc_vers)):
-        # check that this file has the basics of an easyconfig
+    # check that this file has the basics of an easyconfig
+    if (not name):
+        logging.error('Failed to parse EasyConfig: name is mandatory.')
+        return
+    if (not vers):
+        logging.error('Failed to parse EasyConfig: version is mandatory.')
+        return
+    if (not tc_name):
+        logging.error('Failed to parse EasyConfig: toolchain name is mandatory.')
+        return
+    if ((not tc_vers) and (tc_name != 'dummy')):
+        logging.error('Failed to parse EasyConfig: toolchain version is mandatory.')
         return
 
     vsuff = ec.get('versionsuffix', '')
@@ -162,8 +227,13 @@ def parse_eb_file(eb_file):
                 dep_vers_suffix = deps[i][2]
 
                 if len(deps[i]) > 3:
-                    dep_tc = deps[i][3][0]
-                    dep_tc_vers = deps[i][3][1]
+
+                    if deps[i][3] is True:
+                        dep_tc = 'dummy'
+                        dep_tc_vers = '-'
+                    else:
+                        dep_tc = deps[i][3][0]
+                        dep_tc_vers = deps[i][3][1]
 
             dep_vers += dep_vers_suffix
 
