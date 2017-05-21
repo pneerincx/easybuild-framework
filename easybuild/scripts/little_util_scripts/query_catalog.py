@@ -98,7 +98,7 @@ def main():
                          'the -c/--catalog command line argument.')
         sys.exit(2)
     #
-    # Get query app and optional version + toolchain + toolchain version.
+    # Get query app and/or toolchain and optional app version + toolchain version.
     #
     if isinstance(args.app, basestring):
         q_app_string = args.app
@@ -112,8 +112,9 @@ def main():
             q_app_vers = None
             logging.debug('No application version specified.')
     else:
-        logging.critical('Must provide an application to query the catalog for with -a/--app')
-        sys.exit(2)
+        q_app_name = None
+        q_app_vers = None
+        logging.debug('No toolchain specified.')
     if isinstance(args.tc, basestring):
         q_tc_string = args.tc
         q_tc = q_tc_string.split('/', 1)
@@ -129,6 +130,10 @@ def main():
         q_tc_name = None
         q_tc_vers = None
         logging.debug('No toolchain specified.')
+    if q_app_name is None and q_tc_name is None:
+        logging.critical('Must provide at least an application or toolchain '
+                         'to query the catalog with -a/--app or -t/--tc.')
+        sys.exit(2)
     #
     # Get requested action.
     #
@@ -154,18 +159,29 @@ def main():
     catalog_fh.close()
     for app in catalog:
         logging.debug('Processing app ' + app['app_name'] + '...')
-        if (app['app_name'] == q_app_name
-                and (app['app_vers'] == q_app_vers or q_app_vers is None)
-                and (app['tc_name'] == q_tc_name or q_tc_name is None)
-                and (app['tc_vers'] == q_tc_vers or q_tc_vers is None)):
+        if (q_app_name is None
+                and (app['app_name'] == q_tc_name)
+                and (app['app_vers'] == q_tc_vers or q_tc_vers is None)):
             #
-            # Application matches query terms.
+            # Application matches query toolchain.
             #
             logging.debug('App ' + app['app_name'] + ' matches query terms.')
             print("{0}".format(separator))
             format_and_print(dep_level, app)
             if list_deps:
-                get_needy_dependants(dep_level, catalog, app)
+                get_needy_dependants(dep_level, catalog, app, True)
+        if (app['app_name'] == q_app_name
+                and (app['app_vers'] == q_app_vers or q_app_vers is None)
+                and (app['tc_name'] == q_tc_name or q_tc_name is None)
+                and (app['tc_vers'] == q_tc_vers or q_tc_vers is None)):
+            #
+            # Application matches query app.
+            #
+            logging.debug('App ' + app['app_name'] + ' matches query terms.')
+            print("{0}".format(separator))
+            format_and_print(dep_level, app)
+            if list_deps:
+                get_needy_dependants(dep_level, catalog, app, False)
 
 
 def format_and_print(dep_level, app):
@@ -186,7 +202,7 @@ def format_and_print(dep_level, app):
     print(formatted_line)
 
 
-def get_needy_dependants(dep_level, catalog, dep_app):
+def get_needy_dependants(dep_level, catalog, q_app, q_app_is_toolchain):
     dep_level += 1
     #
     # Find dependant apps where "dep" is listed as a dependency.
@@ -195,23 +211,47 @@ def get_needy_dependants(dep_level, catalog, dep_app):
         logging.debug('Processing app ' + app['app_name'] +
                       ' (dep level = ' + str(dep_level) + ')...')
         logging.debug(json.dumps(app, indent=4, sort_keys=True))
+        app_is_dependant = False
+        if q_app_is_toolchain is True:
+            if (app['tc_name'] == q_app['app_name']
+                    and app['tc_vers'] == q_app['app_vers']):
+                #
+                # We found a correctly specified dependency.
+                #
+                app_is_dependant = True
         for dep in app['run_deps']:
-            if (dep['app_name'] == dep_app['app_name']):
-                if (dep['app_vers'] == dep_app['app_vers']
-                        and dep['app_vers_suffix'] == dep_app['app_vers_suffix']
-                        and dep['tc_name'] == dep_app['tc_name']
-                        and (dep['tc_vers'] == dep_app['tc_vers']
+            if q_app_is_toolchain is True:
+                if (dep['tc_name'] == q_app['app_name']
+                        and dep['tc_vers'] == q_app['app_vers']):
+                    #
+                    # We found a correctly specified dependency.
+                    #
+                    app_is_dependant = True
+                elif (q_app['app_name'] + '-' + q_app['app_vers'] in dep['app_vers']
+                        or q_app['app_name'] + '-' + q_app['app_vers'] in dep['app_vers_suffix']):
+                    #
+                    # We found a malformed dependency.
+                    #
+                    logging.error('Malformed dependency: tool chain in either '
+                                  'the version number or version suffix!')
+                    logging.error('\towner: ' + app['owner'] +
+                                  ' | deployed easyconfig: ' + app['easyconfig'])
+                    app_is_dependant = True
+            elif (dep['app_name'] == q_app['app_name']):
+                if (dep['app_vers'] == q_app['app_vers']
+                        and dep['app_vers_suffix'] == q_app['app_vers_suffix']
+                        and dep['tc_name'] == q_app['tc_name']
+                        and (dep['tc_vers'] == q_app['tc_vers']
                              or dep['tc_name'] == 'dummy')):
                     #
                     # We found a correctly specified dependency.
                     #
-                    format_and_print(dep_level, app)
-                    get_needy_dependants(dep_level, catalog, app)
-                elif(dep['app_vers'] == dep_app['app_vers']
+                    app_is_dependant = True
+                elif(dep['app_vers'] == q_app['app_vers']
                         and dep['app_vers_suffix'] ==
-                        '-' + dep_app['tc_name'] + '-'
-                        + dep_app['tc_vers']
-                        + dep_app['app_vers_suffix']):
+                        '-' + q_app['tc_name'] + '-'
+                        + q_app['tc_vers']
+                        + q_app['app_vers_suffix']):
                     #
                     # We found a malformed dependency.
                     #
@@ -219,13 +259,12 @@ def get_needy_dependants(dep_level, catalog, dep_app):
                                   'the version number or version suffix!')
                     logging.error('\towner: ' + app['owner'] +
                                   ' | deployed easyconfig: ' + app['easyconfig'])
-                    format_and_print(dep_level, app)
-                    get_needy_dependants(dep_level, catalog, app)
+                    app_is_dependant = True
                 elif(dep['app_vers'] ==
-                     dep_app['app_vers'] + '-'
-                     + dep_app['tc_name'] + '-'
-                     + dep_app['tc_vers']
-                     + dep_app['app_vers_suffix']):
+                     q_app['app_vers'] + '-'
+                     + q_app['tc_name'] + '-'
+                     + q_app['tc_vers']
+                     + q_app['app_vers_suffix']):
                     #
                     # We found a malformed dependency.
                     #
@@ -233,8 +272,10 @@ def get_needy_dependants(dep_level, catalog, dep_app):
                                   'the version number or version suffix!')
                     logging.error('\towner: ' + app['owner'] +
                                   ' | deployed easyconfig: ' + app['easyconfig'])
-                    format_and_print(dep_level, app)
-                    get_needy_dependants(dep_level, catalog, app)
+                    app_is_dependant = True
+        if app_is_dependant is True:
+            format_and_print(dep_level, app)
+            get_needy_dependants(dep_level, catalog, app, False)
 
 
 if __name__ == "__main__":
