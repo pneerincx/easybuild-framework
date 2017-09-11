@@ -10,13 +10,13 @@ from pprint import pprint
 #
 # This script is for managing a local collection of EasyConfig files
 # It can:
-#    - make a list so that they are orderd with programs listed after 
+#    - make a list so that they are orderd with programs listed after
 #            all of their dependiencies
 #
-#    - Copy EasyConfig files to a directory 
-#    - suggest updates to dependency versions (from already-installed versions)
-#    - Identify cases where dependency tooklchain/version is a mismatch
-#    - list all applications and their dependencies
+#    - Copy EasyConfig files to a directory.
+#    - Suggest updates to dependency versions (from already-installed versions).
+#    - Identify cases where dependency toolchain/version is a mismatch.
+#    - List all applications and their dependencies.
 #
 #  The program is a little unpolished but it is more useful than it sounds.
 
@@ -35,24 +35,38 @@ class SmartFormatter(argparse.HelpFormatter):
 
 ######################################################################
 def main():
-
-    # default file comes from environment variable
-    database_file = os.environ['EBSW_DATABASE']
-
-    # get arguments
-    parser = argparse.ArgumentParser(description="Prints a list of "
-                                     "applications in such an order that all "
-                                     "of the dependencies occur in the list "
-                                     "before their dependent applications. "
-                                     "The default is that the names of the "
-                                     "EasyConfig files are listed.",
-                                     formatter_class=SmartFormatter)
-
+    #
+    # Get defaults from ENV.
+    #
+    if 'EASYBUILD_CATALOG' in os.environ:
+        easybuild_catalog = os.environ['EASYBUILD_CATALOG']
+    else:
+        if 'EASYBUILD_SUBDIR_SOFTWARE' in os.environ:
+            easybuild_subdir_software = os.environ['EASYBUILD_SUBDIR_SOFTWARE']
+        else:
+            easybuild_subdir_software = 'software'  # default
+        if 'EASYBUILD_INSTALLPATH' in os.environ:
+            easybuild_catalog = os.environ['EASYBUILD_INSTALLPATH'] + '/' \
+                              + easybuild_subdir_software + '/' \
+                              + 'installed_with_easybuild.catalog'
+        else:
+            easybuild_catalog = None
+    #
+    # Get commandline options.
+    #
+    parser = argparse.ArgumentParser(
+        description="Prints a list of applications in such an order that all "
+                    "requirements occur in the list before their dependent applications. "
+                    "The default is that the names of the EasyConfig files are listed.",
+        formatter_class=SmartFormatter
+    )
+    parser.add_argument('-c', '--catalog',
+                        help='Catalog flatfile '
+                             'which contains a list of installed software modules. '
+                             'You may create a catalog file using the create_catalog.py script.',
+                        default=easybuild_catalog)
     parser.add_argument("tc_name", help="Toolchain name")
     parser.add_argument("tc_vers", help="Toolchain version")
-    parser.add_argument("-f", "--dbfile",
-                        help="Use local database file instead of default "
-                        "system file:  "+database_file)
     parser.add_argument("-t", "--tc_listfile",
                         help="R|Optionally supplied file with lists of "
                         "sub-toolchains in which to chase dependencies. "
@@ -108,7 +122,7 @@ def main():
     args = parser.parse_args()
 
     if(args.dbfile):
-        database_file = args.dbfile
+        easybuild_catalog = args.dbfile
 
     dest_dir = ""
     if(args.copydir):
@@ -167,8 +181,8 @@ def main():
         # add "dummy","dummy"  as a relevant toolchain
         tc_list.append({'tc': 'dummy', 'tc_vers': 'dummy'})
 
-    apps_list = read_database_file(database_file, tc_list, toolchain_follow,
-                                   rogue_tc_check_flag)
+    apps_list = read_easybuild_catalog(easybuild_catalog, tc_list, toolchain_follow,
+                                       rogue_tc_check_flag)
 
     if rogue_tc_check_flag:
         # for dependency toolchain check,
@@ -363,7 +377,7 @@ def dump_out_offending(apps_list, tc_list, full_path_flag):
                         and (dep_tc_vers != "dummy"):
                     # we have found an unlisted toolchain
                     flag_this_app = True
-                    
+
         if flag_this_app:
             # there is an unlisted toolchain in one of the dependencies
             print("In\n{0} {1}\t{2} {3}".format(name, version, tc, tc_vers))
@@ -386,8 +400,8 @@ def dump_out_offending(apps_list, tc_list, full_path_flag):
                     if not test \
                             and (dep_tc != "dummy") \
                             and (dep_tc_vers != "dummy"):
-                         print("\t{0} {1}\t{2} {3} "
-                               "<---- check".format(dep_name, dep_vers,
+                        print("\t{0} {1}\t{2} {3} "
+                              "<---- check".format(dep_name, dep_vers,
                                                    dep_tc, dep_tc_vers))
     sys.exit()
 
@@ -493,15 +507,15 @@ def find_highest_dependency(app, indicies):
 
 
 ######################################################################
-def read_database_file(database_file, tc_list, toolchain_follow,
-                       rogue_tc_check_flag):
+def read_easybuild_catalog(easybuild_catalog, tc_list,
+                           toolchain_follow, rogue_tc_check_flag):
     apps_list = []
-    # open the database file
+    # open the catalog file
     try:
-        db_file = open(database_file, "r")
+        db_file = open(easybuild_catalog, "r")
     except IOError:
-        print("Cannot open database file. Check that the file")
-        print("{0}".format(database_file))
+        print("Cannot open catalog file. Check that the file")
+        print("{0}".format(easybuild_catalog))
         print("exits and is readable. If not, run toolchain_finder.py")
         sys.exit()
 
@@ -683,10 +697,11 @@ def copy_easyconfig(copyflag, eb_file, dest_dir):
             shutil.copy2(eb_file, dest_dir)
         else:
             print("File {0} does not exist. "
-                  "Possibly the system database is out of date. "
+                  "Possibly the system catalog is out of date. "
                   "Skipping.".format(eb_file))
 
 ######################################################################
+
 
 if __name__ == "__main__":
     main()

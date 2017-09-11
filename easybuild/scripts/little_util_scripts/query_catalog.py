@@ -40,7 +40,8 @@ def main():
     )
     parser.add_argument('-c', '--catalog',
                         help='Catalog flatfile '
-                             'where list of installed software modules will be saved.',
+                             'which contains a list of installed software modules. '
+                             'You may create a catalog file using the create_catalog.py script.',
                         default=easybuild_catalog)
     parser.add_argument('-a', '--app',
                         help='Optionally restrict query to specified Application.'
@@ -133,6 +134,8 @@ def main():
     if q_app_name is None and q_tc_name is None:
         logging.critical('Must provide at least an application or toolchain '
                          'to query the catalog with -a/--app or -t/--tc.')
+        logging.critical('Use -h/--help to get a list of available commandline options'
+                         'to do something useful with the app(s) or toolchain(s) found.')
         sys.exit(2)
     #
     # Get requested action.

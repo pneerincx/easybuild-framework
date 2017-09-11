@@ -119,7 +119,7 @@ def main():
     applications = []
     easyconfigs_found = 0
     easyconfigs_parsed = 0
-    exclude = set(['EasyBuild'])
+    exclude = set(['EasyBuild', 'eb'])
     exclude_sstr = ".sys."
     for root, dirs, files in os.walk(top, topdown=True):
         dirs[:] = [d for d in dirs if d not in exclude]
