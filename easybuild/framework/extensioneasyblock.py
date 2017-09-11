@@ -1,10 +1,10 @@
 ##
-# Copyright 2013-2014 Ghent University
+# Copyright 2013-2017 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of the University of Ghent (http://ugent.be/hpc).
 #
-# http://github.com/hpcugent/easybuild
+# https://github.com/easybuilders/easybuild
 #
 # EasyBuild is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 EasyBuild support for building and installing extensions as actual extensions or as stand-alone modules,
 implemented as an easyblock
 
-@author: Kenneth Hoste (Ghent University)
+:author: Kenneth Hoste (Ghent University)
 """
 import copy
 import os
@@ -31,6 +31,7 @@ from vsc.utils import fancylogger
 from easybuild.framework.easyblock import EasyBlock
 from easybuild.framework.easyconfig import CUSTOM
 from easybuild.framework.extension import Extension
+from easybuild.tools.build_log import EasyBuildError
 from easybuild.tools.filetools import apply_patch, extract_file
 from easybuild.tools.utilities import remove_unwanted_chars
 
@@ -71,12 +72,19 @@ class ExtensionEasyBlock(EasyBlock, Extension):
         self.is_extension = False
 
         if isinstance(args[0], EasyBlock):
+            # make sure that extra custom easyconfig parameters are known
+            extra_params = self.__class__.extra_options()
+            kwargs['extra_params'] = extra_params
+
             Extension.__init__(self, *args, **kwargs)
+
             # name and version properties of EasyBlock are used, so make sure name and version are correct
             self.cfg['name'] = self.ext.get('name', None)
             self.cfg['version'] = self.ext.get('version', None)
             self.builddir = self.master.builddir
             self.installdir = self.master.installdir
+            self.modules_tool = self.master.modules_tool
+            self.module_generator = self.master.module_generator
             self.is_extension = True
             self.unpack_options = None
         else:
@@ -97,7 +105,7 @@ class ExtensionEasyBlock(EasyBlock, Extension):
         if self.patches:
             for patchfile in self.patches:
                 if not apply_patch(patchfile, self.ext_dir):
-                    self.log.error("Applying patch %s failed" % patchfile)
+                    raise EasyBuildError("Applying patch %s failed", patchfile)
 
     def sanity_check_step(self, exts_filter=None, custom_paths=None, custom_commands=None):
         """
@@ -107,20 +115,22 @@ class ExtensionEasyBlock(EasyBlock, Extension):
             self.cfg['exts_filter'] = exts_filter
         self.log.debug("starting sanity check for extension with filter %s", self.cfg['exts_filter'])
 
-        if not self.is_extension:
+        fake_mod_data = None
+        if not (self.is_extension or self.dry_run):
             # load fake module
             fake_mod_data = self.load_fake_module(purge=True)
 
         # perform sanity check
         sanity_check_ok = Extension.sanity_check_step(self)
 
-        if not self.is_extension:
+        if fake_mod_data:
             # unload fake module and clean up
             self.clean_up_fake_module(fake_mod_data)
 
-        if custom_paths or self.cfg['sanity_check_paths'] or custom_commands or self.cfg['sanity_check_commands']:
-            EasyBlock.sanity_check_step(self, custom_paths=custom_paths, custom_commands=custom_commands,
-                extension=self.is_extension)
+        if custom_paths or custom_commands or not self.is_extension:
+            super(ExtensionEasyBlock, self).sanity_check_step(custom_paths=custom_paths,
+                                                              custom_commands=custom_commands,
+                                                              extension=self.is_extension)
 
         # pass or fail sanity check
         if not sanity_check_ok:
@@ -128,7 +138,7 @@ class ExtensionEasyBlock(EasyBlock, Extension):
             if self.is_extension:
                 self.log.warning(msg)
             else:
-                self.log.error(msg)
+                raise EasyBuildError(msg)
             return False
         else:
             self.log.info("Sanity check for %s successful!" % self.name)

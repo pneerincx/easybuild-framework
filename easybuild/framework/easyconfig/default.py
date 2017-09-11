@@ -1,14 +1,14 @@
 # #
-# Copyright 2009-2014 Ghent University
+# Copyright 2009-2017 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
-# the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# the Flemish Supercomputer Centre (VSC) (https://www.vscentrum.be),
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
-# http://github.com/hpcugent/easybuild
+# https://github.com/easybuilders/easybuild
 #
 # EasyBuild is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,14 +26,16 @@
 """
 Easyconfig module that contains the default EasyConfig configuration parameters.
 
-@author: Stijn De Weirdt (Ghent University)
-@author: Dries Verdegem (Ghent University)
-@author: Kenneth Hoste (Ghent University)
-@author: Pieter De Baets (Ghent University)
-@author: Jens Timmerman (Ghent University)
-@author: Toon Willems (Ghent University)
+:author: Stijn De Weirdt (Ghent University)
+:author: Dries Verdegem (Ghent University)
+:author: Kenneth Hoste (Ghent University)
+:author: Pieter De Baets (Ghent University)
+:author: Jens Timmerman (Ghent University)
+:author: Toon Willems (Ghent University)
 """
 from vsc.utils import fancylogger
+
+from easybuild.tools.build_log import EasyBuildError
 
 
 _log = fancylogger.getLogger('easyconfig.default', fname=False)
@@ -86,6 +88,8 @@ DEFAULT_CONFIG = {
     'easyblock': [None, "EasyBlock to use for building; if set to None, an easyblock is selected "
                         "based on the software name", BUILD],
     'easybuild_version': [None, "EasyBuild-version this spec-file was written for", BUILD],
+    'github_account': [None, "GitHub account name to be used to resolve template values in source URLs", BUILD],
+    'hidden': [False, "Install module file as 'hidden' by prefixing its version with '.'", BUILD],
     'installopts': ['', 'Extra options for installation', BUILD],
     'maxparallel': [None, 'Max degree of parallelism', BUILD],
     'parallel': [None, ('Degree of parallelism for e.g. make (default: based on the number of '
@@ -108,7 +112,7 @@ DEFAULT_CONFIG = {
     'stop': [None, 'Keyword to halt the build process after a certain step.', BUILD],
     'tests': [[], ("List of test-scripts to run after install. A test script should return a "
                    "non-zero exit status to fail"), BUILD],
-    'unpack_options': [None, "Extra options for unpacking source", BUILD],
+    'unpack_options': ['', "Extra options for unpacking source", BUILD],
     'unwanted_env_vars': [[], "List of environment variables that shouldn't be set during build", BUILD],
     'versionprefix': ['', ('Additional prefix for software version '
                            '(placed before version and toolchain name)'), BUILD],
@@ -139,7 +143,8 @@ DEFAULT_CONFIG = {
     'osdependencies': [[], "OS dependencies that should be present on the system", DEPENDENCIES],
 
     # LICENSE easyconfig parameters
-    'group': [None, "Name of the user group for which the software should be available", LICENSE],
+    'group': [None, "Name of the user group for which the software should be available; "
+                    "format: string or 2-tuple with group name + custom error for users outside group", LICENSE],
     'key': [None, 'Key for installing software', LICENSE],
     'license_file': [None, 'License file for software', LICENSE],
     'license_server': [None, 'License server for software', LICENSE],
@@ -153,15 +158,29 @@ DEFAULT_CONFIG = {
     'exts_list': [[], 'List with extensions added to the base installation', EXTENSIONS],
 
     # MODULES easyconfig parameters
+    'allow_prepend_abs_path': [False, "Allow specifying absolute paths to prepend in modextrapaths", MODULES],
+    'include_modpath_extensions': [True, "Include $MODULEPATH extensions specified by module naming scheme.", MODULES],
+    'modaliases': [{}, "Aliases to be defined in module file", MODULES],
     'modextrapaths': [{}, "Extra paths to be prepended in module file", MODULES],
     'modextravars': [{}, "Extra environment variables to be added to module file", MODULES],
     'modloadmsg': [{}, "Message that should be printed when generated module is loaded", MODULES],
+    'modluafooter': ["", "Footer to include in generated module file (Lua syntax)", MODULES],
+    'modaltsoftname': [None, "Module name to use (rather than using software name", MODULES],
     'modtclfooter': ["", "Footer to include in generated module file (Tcl syntax)", MODULES],
-    'modaliases': [{}, "Aliases to be defined in module file", MODULES],
     'moduleclass': ['base', 'Module class to be used for this software', MODULES],
     'moduleforceunload': [False, 'Force unload of all modules when loading the extension', MODULES],
     'moduleloadnoconflict': [False, "Don't check for conflicts, unload other versions instead ", MODULES],
-    'include_modpath_extensions': [True, "Include $MODULEPATH extensions specified by module naming scheme.", MODULES],
+    'recursive_module_unload': [False, 'Recursive unload of all dependencies when unloading module', MODULES],
+
+    # MODULES documentation easyconfig parameters
+    #    (docurls is part of MANDATORY)
+    'docpaths': [None, "List of paths for documentation relative to installation directory", MODULES],
+    'examples': [None, "Free-form text with examples on using the software", MODULES],
+    'site_contacts': [None, "String/list of strings with site contacts for the software", MODULES],
+    'upstream_contacts': [None, ("String/list of strings with upstream contact addresses "
+                                "(e.g., support e-mail, mailing list, bugtracker)"), MODULES],
+    'usage': [None, "Usage instructions for the software", MODULES],
+    'whatis': [None, "List of brief (one line) description entries for the software", MODULES],
 
     # OTHER easyconfig parameters
     'buildstats': [None, "A list of dicts with build statistics", OTHER],
@@ -180,7 +199,7 @@ def sorted_categories():
 def get_easyconfig_parameter_default(param):
     """Get default value for given easyconfig parameter."""
     if param not in DEFAULT_CONFIG:
-        _log.error("Unkown easyconfig parameter: %s (known: %s)" % (param, sorted(DEFAULT_CONFIG.keys())))
+        raise EasyBuildError("Unkown easyconfig parameter: %s (known: %s)", param, sorted(DEFAULT_CONFIG.keys()))
     else:
         _log.debug("Returning default value for easyconfig parameter %s: %s" % (param, DEFAULT_CONFIG[param][0]))
         return DEFAULT_CONFIG[param][0]

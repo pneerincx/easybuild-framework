@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 ##
-# Copyright 2012-2014 Ghent University
+# Copyright 2012-2017 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC-UGent team.
 #
-# http://github.com/easybuild/easybuild
+# https://github.com/easybuild/easybuild
 #
 # EasyBuild is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,8 +37,8 @@ harder example, adding someone as copyright holder to all .py files in a source 
     python addheader.py licenseheader.txt src/ ".*\.py" "^((?!includes).)*$" "# Copyright .* Jens Timmerman*"
 where licenseheader.txt contains '# Copyright 2012 Jens Timmerman'
 
-@author: Jens Timmerman (Ghent University)
-@author: Kenneth Hoste (Ghent University)
+:author: Jens Timmerman (Ghent University)
+:author: Kenneth Hoste (Ghent University)
 """
 import os
 import re
