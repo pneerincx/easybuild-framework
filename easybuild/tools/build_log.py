@@ -1,5 +1,5 @@
 # #
-# Copyright 2009-2017 Ghent University
+# Copyright 2009-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -37,6 +37,7 @@ import re
 import sys
 import tempfile
 from copy import copy
+from datetime import datetime
 from vsc.utils import fancylogger
 from vsc.utils.exceptions import LoggedException
 
@@ -179,7 +180,7 @@ _init_fancylog = fancylogger.getLogger(fname=False)
 del _init_fancylog.manager.loggerDict[_init_fancylog.name]
 
 # we need to make sure there is a handler
-fancylogger.logToFile(filename=os.devnull)
+fancylogger.logToFile(filename=os.devnull, max_bytes=0)
 
 # EasyBuildLog
 _init_easybuildlog = fancylogger.getLogger(fname=False)
@@ -195,7 +196,7 @@ def init_logging(logfile, logtostdout=False, silent=False, colorize=fancylogger.
             fd, logfile = tempfile.mkstemp(suffix='.log', prefix='easybuild-')
             os.close(fd)
 
-        fancylogger.logToFile(logfile)
+        fancylogger.logToFile(logfile, max_bytes=0)
         print_msg('temporary log file in case of crash %s' % (logfile), log=None, silent=silent)
 
     log = fancylogger.getLogger(fname=False)
@@ -299,3 +300,21 @@ def print_warning(message, silent=False):
     """
     if not silent:
         sys.stderr.write("\nWARNING: %s\n\n" % message)
+
+
+def time_str_since(start_time):
+    """
+    Return string representing amount of time that has passed since specified timestamp
+
+    :param start_time: datetime value representing start time
+    :return: string value representing amount of time passed since start_time;
+             format: "[[%d hours, ]%d mins, ]%d sec(s)"
+    """
+    tot_time = datetime.now() - start_time
+    tot_secs = tot_time.seconds + tot_time.days * 24 * 3600
+    if tot_secs > 0:
+        res = datetime.utcfromtimestamp(tot_secs).strftime('%Hh%Mm%Ss')
+    else:
+        res = "< 1s"
+
+    return res

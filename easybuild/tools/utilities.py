@@ -1,5 +1,5 @@
 # #
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -164,10 +164,7 @@ def only_if_module_is_available(modnames, pkgname=None, url=None):
     return wrap
 
 
-def trace_msg(message, silent=False, timestamp=False):
+def trace_msg(message, silent=False):
     """Print trace message."""
     if build_option('trace'):
-        _log.experimental("Using --trace")
-        if timestamp:
-            message += " [started at: %s]" % datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print_msg('  >> ' + message, prefix=False)

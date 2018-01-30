@@ -1,5 +1,5 @@
 ##
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -85,7 +85,7 @@ class IntelFFTW(Fftw):
         self.log.debug('fftw_libs %s' % fftw_libs.__repr__())
 
         self.FFT_LIB_DIR = self.BLAS_LIB_DIR
-        self.FFT_INCLUDE_DIR = self.BLAS_INCLUDE_DIR
+        self.FFT_INCLUDE_DIR = [os.path.join(d, 'fftw') for d in self.BLAS_INCLUDE_DIR]
 
         # building the FFTW interfaces is optional,
         # so make sure libraries are there before FFT_LIB is set

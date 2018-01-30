@@ -1,5 +1,5 @@
 ##
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -46,7 +46,7 @@ from easybuild.framework.easyconfig.easyconfig import EasyConfig, ActiveMNS
 from easybuild.tools import systemtools as st
 from easybuild.tools.build_log import EasyBuildError
 from easybuild.tools.environment import setvar
-from easybuild.tools.filetools import adjust_permissions, find_eb_script, mkdir, read_file, write_file, which
+from easybuild.tools.filetools import adjust_permissions, copy_dir, find_eb_script, mkdir, read_file, write_file, which
 from easybuild.tools.run import run_cmd
 from easybuild.tools.toolchain.utilities import get_toolchain, search_toolchain
 
@@ -1065,10 +1065,21 @@ class ToolchainTest(EnhancedTestCase):
         """Test rpath_args.py script"""
         script = find_eb_script('rpath_args.py')
 
+        rpath_inc = ','.join([
+            os.path.join(self.test_prefix, 'lib'),
+            os.path.join(self.test_prefix, 'lib64'),
+            '$ORIGIN',
+            '$ORIGIN/../lib',
+            '$ORIGIN/../lib64',
+        ])
+
         # simplest possible compiler command
-        out, ec = run_cmd("%s gcc '' -c foo.c" % script, simple=False)
+        out, ec = run_cmd("%s gcc '' '%s' -c foo.c" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1078,14 +1089,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # linker command, --enable-new-dtags should be replaced with --disable-new-dtags
-        out, ec = run_cmd("%s ld '' --enable-new-dtags foo.o" % script, simple=False)
+        out, ec = run_cmd("%s ld '' '%s' --enable-new-dtags foo.o" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
-        expected = '\n'.join([
-            "CMD_ARGS=('foo.o')",
-            "RPATH_ARGS='--disable-new-dtags -rpath=$ORIGIN/../lib -rpath=$ORIGIN/../lib64'",
-            ''
-        ])
         cmd_args = [
+            "'-rpath=%s/lib'" % self.test_prefix,
+            "'-rpath=%s/lib64'" % self.test_prefix,
+            "'-rpath=$ORIGIN'",
             "'-rpath=$ORIGIN/../lib'",
             "'-rpath=$ORIGIN/../lib64'",
             "'--disable-new-dtags'",
@@ -1095,9 +1104,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # test passing no arguments
-        out, ec = run_cmd("%s gcc ''" % script, simple=False)
+        out, ec = run_cmd("%s gcc '' '%s'" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1105,9 +1117,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # test passing a single empty argument
-        out, ec = run_cmd("%s ld.gold '' ''" % script, simple=False)
+        out, ec = run_cmd("%s ld.gold '' '%s' ''" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-rpath=%s/lib'" % self.test_prefix,
+            "'-rpath=%s/lib64'" % self.test_prefix,
+            "'-rpath=$ORIGIN'",
             "'-rpath=$ORIGIN/../lib'",
             "'-rpath=$ORIGIN/../lib64'",
             "'--disable-new-dtags'",
@@ -1116,9 +1131,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # single -L argument
-        out, ec = run_cmd("%s gcc '' foo.c -L/foo -lfoo" % script, simple=False)
+        out, ec = run_cmd("%s gcc '' '%s' foo.c -L/foo -lfoo" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1130,9 +1148,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # relative paths passed to -L are *not* RPATH'ed in
-        out, ec = run_cmd("%s gcc '' foo.c -L../lib -lfoo" % script, simple=False)
+        out, ec = run_cmd("%s gcc '' '%s' foo.c -L../lib -lfoo" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1143,9 +1164,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # single -L argument, with value separated by a space
-        out, ec = run_cmd("%s gcc '' foo.c -L   /foo -lfoo" % script, simple=False)
+        out, ec = run_cmd("%s gcc '' '%s' foo.c -L   /foo -lfoo" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1157,9 +1181,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # multiple -L arguments, order should be preserved
-        out, ec = run_cmd("%s ld '' -L/foo foo.o -L/lib64 -lfoo -lbar -L/usr/lib -L/bar" % script, simple=False)
+        out, ec = run_cmd("%s ld '' '%s' -L/foo foo.o -L/lib64 -lfoo -lbar -L/usr/lib -L/bar" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-rpath=%s/lib'" % self.test_prefix,
+            "'-rpath=%s/lib64'" % self.test_prefix,
+            "'-rpath=$ORIGIN'",
             "'-rpath=$ORIGIN/../lib'",
             "'-rpath=$ORIGIN/../lib64'",
             "'--disable-new-dtags'",
@@ -1178,9 +1205,12 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # test specifying of custom rpath filter
-        out, ec = run_cmd("%s ld '/fo.*,/bar.*' -L/foo foo.o -L/lib64 -lfoo -L/bar -lbar" % script, simple=False)
+        out, ec = run_cmd("%s ld '/fo.*,/bar.*' '%s' -L/foo foo.o -L/lib64 -lfoo -L/bar -lbar" % (script, rpath_inc), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-rpath=%s/lib'" % self.test_prefix,
+            "'-rpath=%s/lib64'" % self.test_prefix,
+            "'-rpath=$ORIGIN'",
             "'-rpath=$ORIGIN/../lib'",
             "'-rpath=$ORIGIN/../lib64'",
             "'--disable-new-dtags'",
@@ -1211,9 +1241,12 @@ class ToolchainTest(EnhancedTestCase):
             '-Wl,-rpath',
             '-Wl,/example/software/XZ/5.2.2-intel-2016b/lib',
         ])
-        out, ec = run_cmd("%s icc '' %s" % (script, args), simple=False)
+        out, ec = run_cmd("%s icc '' '%s' %s" % (script, rpath_inc, args), simple=False)
         self.assertEqual(ec, 0)
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1251,11 +1284,14 @@ class ToolchainTest(EnhancedTestCase):
             '-o build/version.o',
             '../../gcc/version.c',
         ]
-        cmd = "%s g++ '' %s" % (script, ' '.join(args))
+        cmd = "%s g++ '' '%s' %s" % (script, rpath_inc, ' '.join(args))
         out, ec = run_cmd(cmd, simple=False)
         self.assertEqual(ec, 0)
 
         cmd_args = [
+            "'-Wl,-rpath=%s/lib'" % self.test_prefix,
+            "'-Wl,-rpath=%s/lib64'" % self.test_prefix,
+            "'-Wl,-rpath=$ORIGIN'",
             "'-Wl,-rpath=$ORIGIN/../lib'",
             "'-Wl,-rpath=$ORIGIN/../lib64'",
             "'-Wl,--disable-new-dtags'",
@@ -1273,7 +1309,7 @@ class ToolchainTest(EnhancedTestCase):
         self.assertEqual(out.strip(), "CMD_ARGS=(%s)" % ' '.join(cmd_args))
 
         # verify that no -rpath arguments are injected when command is run in 'version check' mode
-        cmd = "%s g++ '' -v" % script
+        cmd = "%s g++ '' '%s' -v" % (script, rpath_inc)
         out, ec = run_cmd(cmd, simple=False)
         self.assertEqual(ec, 0)
         self.assertEqual(out.strip(), "CMD_ARGS=('-v')")
@@ -1325,8 +1361,6 @@ class ToolchainTest(EnhancedTestCase):
         # no -rpath for /bar because of rpath filter
         out, _ = run_cmd('gcc ${USER}.c -L/foo -L/bar \'$FOO\' -DX="\\"\\""')
         expected = ' '.join([
-            '-Wl,-rpath=$ORIGIN/../lib',
-            '-Wl,-rpath=$ORIGIN/../lib64',
             '-Wl,--disable-new-dtags',
             '-Wl,-rpath=/foo',
             '%(user)s.c',
@@ -1346,6 +1380,86 @@ class ToolchainTest(EnhancedTestCase):
         self.assertFalse(any(tc.is_rpath_wrapper(x) for x in res[1:]))
         self.assertTrue(os.path.samefile(res[1], fake_gcc))
         self.assertFalse(any(os.path.samefile(x, fake_gcc) for x in res[2:]))
+
+    def test_prepare_openmpi_tmpdir(self):
+        """Test handling of long $TMPDIR path for OpenMPI 2.x"""
+
+        def prep():
+            """Helper function: create & prepare toolchain"""
+            self.modtool.unload(['gompi', 'OpenMPI', 'hwloc', 'GCC'])
+            tc = self.get_toolchain('gompi', version='1.3.12')
+            self.mock_stderr(True)
+            self.mock_stdout(True)
+            tc.prepare()
+            stderr = self.get_stderr().strip()
+            stdout = self.get_stdout().strip()
+            self.mock_stderr(False)
+            self.mock_stdout(False)
+
+            return tc, stdout, stderr
+
+        orig_tmpdir = os.environ.get('TMPDIR')
+        if len(orig_tmpdir) > 40:
+            # we need to make sure we have a short $TMPDIR for this test...
+            orig_tmpdir = tempfile.mkdtemp(prefix='/tmp/')
+            mkdir(orig_tmpdir)
+            os.environ['TMPDIR'] = orig_tmpdir
+
+        long_tmpdir = os.path.join(self.test_prefix, 'verylongdirectorythatmaycauseproblemswithopenmpi2')
+
+        # $TMPDIR is left untouched with OpenMPI 1.6.4
+        tc, stdout, stderr = prep()
+        self.assertEqual(stdout, '')
+        self.assertEqual(stderr, '')
+        self.assertEqual(os.environ.get('TMPDIR'), orig_tmpdir)
+
+        # ... even with long $TMPDIR
+        os.environ['TMPDIR'] = long_tmpdir
+        tc, stdout, stderr = prep()
+        self.assertEqual(stdout, '')
+        self.assertEqual(stderr, '')
+        self.assertEqual(os.environ.get('TMPDIR'), long_tmpdir)
+        os.environ['TMPDIR'] = orig_tmpdir
+
+        # copy OpenMPI module used in gompi/1.3.12 to fiddle with it, i.e. to fake bump OpenMPI version used in it
+        tmp_modules = os.path.join(self.test_prefix, 'modules')
+        mkdir(tmp_modules)
+
+        test_dir = os.path.abspath(os.path.dirname(__file__))
+        copy_dir(os.path.join(test_dir, 'modules', 'OpenMPI'), os.path.join(tmp_modules, 'OpenMPI'))
+
+        openmpi_module = os.path.join(tmp_modules, 'OpenMPI', '1.6.4-GCC-4.6.4')
+        ompi_mod_txt = read_file(openmpi_module)
+        write_file(openmpi_module, ompi_mod_txt.replace('1.6.4', '2.0.2'))
+
+        self.modtool.use(tmp_modules)
+
+        # $TMPDIR is left untouched with OpenMPI 2.x if $TMPDIR is sufficiently short
+        os.environ['TMPDIR'] = orig_tmpdir
+        tc, stdout, stderr = prep()
+        self.assertEqual(stdout, '')
+        self.assertEqual(stderr, '')
+        self.assertEqual(os.environ.get('TMPDIR'), orig_tmpdir)
+
+        # warning is printed and $TMPDIR is set to shorter path if existing $TMPDIR is too long
+        os.environ['TMPDIR'] = long_tmpdir
+        tc, stdout, stderr = prep()
+        self.assertEqual(stdout, '')
+        regex = re.compile("^WARNING: Long \$TMPDIR .* problems with OpenMPI 2.x, using shorter path: /tmp/.{6}$")
+        self.assertTrue(regex.match(stderr), "Pattern '%s' found in: %s" % (regex.pattern, stderr))
+
+        # new $TMPDIR should be /tmp/xxxxxx
+        tmpdir = os.environ.get('TMPDIR')
+        self.assertTrue(tmpdir.startswith('/tmp'))
+        self.assertEqual(len(tmpdir), 11)
+
+        # also test cleanup method to ensure short $TMPDIR is cleaned up properly
+        self.assertTrue(os.path.exists(tmpdir))
+        tc.cleanup()
+        self.assertFalse(os.path.exists(tmpdir))
+
+        # we may have created our own short tmpdir above, so make sure to clean things up...
+        shutil.rmtree(orig_tmpdir)
 
 
 def suite():

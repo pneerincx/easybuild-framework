@@ -1,5 +1,5 @@
 # #
-# Copyright 2009-2017 Ghent University
+# Copyright 2009-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -89,6 +89,13 @@ EBROOT_ENV_VAR_ACTIONS = [ERROR, IGNORE, UNSET, WARN]
 LOADED_MODULES_ACTIONS = [ERROR, IGNORE, PURGE, UNLOAD, WARN]
 DEFAULT_ALLOW_LOADED_MODULES = ('EasyBuild',)
 
+FORCE_DOWNLOAD_ALL = 'all'
+FORCE_DOWNLOAD_PATCHES = 'patches'
+FORCE_DOWNLOAD_SOURCES = 'sources'
+FORCE_DOWNLOAD_CHOICES = [FORCE_DOWNLOAD_ALL, FORCE_DOWNLOAD_PATCHES, FORCE_DOWNLOAD_SOURCES]
+DEFAULT_FORCE_DOWNLOAD = FORCE_DOWNLOAD_SOURCES
+
+
 # utility function for obtaining default paths
 def mk_full_default_path(name, prefix=DEFAULT_PREFIX):
     """Create full path, avoid '/' at the end."""
@@ -111,12 +118,9 @@ BUILD_OPTIONS_CMDLINE = {
         'filter_env_vars',
         'hide_deps',
         'hide_toolchains',
+        'force_download',
         'from_pr',
         'git_working_dirs_path',
-        'pr_branch_name',
-        'pr_target_account',
-        'pr_target_branch',
-        'pr_target_repo',
         'github_user',
         'github_org',
         'group',
@@ -134,6 +138,10 @@ BUILD_OPTIONS_CMDLINE = {
         'optarch',
         'package_tool_options',
         'parallel',
+        'pr_branch_name',
+        'pr_target_account',
+        'pr_target_branch',
+        'pr_target_repo',
         'rpath_filter',
         'regtest_output_dir',
         'skip',
@@ -158,6 +166,7 @@ BUILD_OPTIONS_CMDLINE = {
         'force',
         'group_writable_installdir',
         'hidden',
+        'ignore_checksums',
         'install_latest_eb_release',
         'minimal_toolchains',
         'module_only',

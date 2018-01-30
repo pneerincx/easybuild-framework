@@ -1,5 +1,5 @@
-
-# Copyright 2009-2017 Ghent University
+# #
+# Copyright 2009-2018 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -120,6 +120,32 @@ CHECKSUM_FUNCTIONS = {
 }
 CHECKSUM_TYPES = sorted(CHECKSUM_FUNCTIONS.keys())
 
+EXTRACT_CMDS = {
+    # gzipped or gzipped tarball
+    '.gtgz':    "tar xzf %(filepath)s",
+    '.gz':      "gunzip -c %(filepath)s > %(target)s",
+    '.tar.gz':  "tar xzf %(filepath)s",
+    '.tgz':     "tar xzf %(filepath)s",
+    # bzipped or bzipped tarball
+    '.bz2':     "bunzip2 -c %(filepath)s > %(target)s",
+    '.tar.bz2': "tar xjf %(filepath)s",
+    '.tb2':     "tar xjf %(filepath)s",
+    '.tbz':     "tar xjf %(filepath)s",
+    '.tbz2':    "tar xjf %(filepath)s",
+    # xzipped or xzipped tarball
+    '.tar.xz':  "unxz %(filepath)s --stdout | tar x",
+    '.txz':     "unxz %(filepath)s --stdout | tar x",
+    '.xz':      "unxz %(filepath)s",
+    # tarball
+    '.tar':     "tar xf %(filepath)s",
+    # zip file
+    '.zip':     "unzip -qq %(filepath)s",
+    # iso file
+    '.iso':     "7z x %(filepath)s",
+    # tar.Z: using compress (LZW)
+    '.tar.z':   "tar xZf %(filepath)s",
+}
+
 
 class ZlibChecksum(object):
     """
@@ -161,13 +187,25 @@ def read_file(path, log_error=True):
     return txt
 
 
-def write_file(path, txt, append=False, forced=False):
-    """Write given contents to file at given path (overwrites current file contents!)."""
+def write_file(path, txt, append=False, forced=False, backup=False):
+    """
+    Write given contents to file at given path;
+    overwrites current file contents without backup by default!
 
+    :param path: location of file
+    :param txt: contents to write to file
+    :param append: append to existing file rather than overwrite
+    :param forced: force actually writing file in (extended) dry run mode
+    :param backup: back up existing file before overwriting or modifying it
+    """
     # early exit in 'dry run' mode
     if not forced and build_option('extended_dry_run'):
         dry_run_msg("file written: %s" % path, silent=build_option('silent'))
         return
+
+    if backup and os.path.exists(path):
+        backup = back_up_file(path)
+        _log.info("Existing file %s backed up to %s", path, backup)
 
     # note: we can't use try-except-finally, because Python 2.4 doesn't support it as a single block
     try:
@@ -345,41 +383,56 @@ def is_alt_pypi_url(url):
     return res
 
 
+def pypi_source_urls(pkg_name):
+    """
+    Fetch list of source URLs (incl. source filename) for specified Python package from PyPI, using 'simple' PyPI API.
+    """
+    # example: https://pypi.python.org/simple/easybuild
+    # see also:
+    # - https://www.python.org/dev/peps/pep-0503/
+    # - https://wiki.python.org/moin/PyPISimple
+    simple_url = 'https://pypi.python.org/simple/%s' % re.sub(r'[-_.]+', '-', pkg_name.lower())
+
+    tmpdir = tempfile.mkdtemp()
+    urls_html = os.path.join(tmpdir, '%s_urls.html' % pkg_name)
+    if download_file(os.path.basename(urls_html), simple_url, urls_html) is None:
+        print("Failed to download %s to determine available PyPI URLs for %s" % (simple_url, pkg_name))
+        _log.debug("Failed to download %s to determine available PyPI URLs for %s", simple_url, pkg_name)
+        res = []
+    else:
+        parsed_html = ElementTree.parse(urls_html)
+        if hasattr(parsed_html, 'iter'):
+            res = [a.attrib['href'] for a in parsed_html.iter('a')]
+        else:
+            res = [a.attrib['href'] for a in parsed_html.getiterator('a')]
+
+    # links are relative, transform them into full URLs; for example:
+    # from: ../../packages/<dir1>/<dir2>/<hash>/easybuild-<version>.tar.gz#md5=<md5>
+    # to: https://pypi.python.org/packages/<dir1>/<dir2>/<hash>/easybuild-<version>.tar.gz#md5=<md5>
+    res = [re.sub('.*/packages/', 'https://pypi.python.org/packages/', x) for x in res]
+
+    return res
+
+
 def derive_alt_pypi_url(url):
-    """Derive alternate PyPI URL for given URL, using 'simple' PyPI API."""
-    # see also https://www.python.org/dev/peps/pep-0503/
+    """Derive alternate PyPI URL for given URL."""
     alt_pypi_url = None
 
     # example input URL: https://pypi.python.org/packages/source/e/easybuild/easybuild-2.7.0.tar.gz
     pkg_name, pkg_source = url.strip().split('/')[-2:]
 
-    # e.g. https://pypi.python.org/simple/easybuild
-    # cfr. https://wiki.python.org/moin/PyPISimple
-    simple_url = 'https://pypi.python.org/simple/%s' % re.sub(r'[-_.]+', '-', pkg_name.lower())
+    cand_urls = pypi_source_urls(pkg_name)
 
-    tmpdir = tempfile.mkdtemp()
-    links_html = os.path.join(tmpdir, '%s_links.html' % pkg_name)
-    res = download_file(os.path.basename(links_html), simple_url, links_html)
-    if res is None:
-        _log.debug("Failed to download %s to determine alternate PyPI URL for %s", simple_url, pkg_source)
-    else:
-        parsed_html = ElementTree.parse(links_html)
-        if hasattr(parsed_html, 'iter'):
-            links = [a.attrib['href'] for a in parsed_html.iter('a')]
-        else:
-            links = [a.attrib['href'] for a in parsed_html.getiterator('a')]
+    regex = re.compile('.*/%s#md5=[a-f0-9]{32}$' % pkg_source.replace('.', '\\.'), re.M)
+    for cand_url in cand_urls:
+        res = regex.match(cand_url)
+        if res:
+            # e.g.: https://pypi.python.org/packages/<dir1>/<dir2>/<hash>/easybuild-<version>.tar.gz#md5=<md5>
+            alt_pypi_url = res.group(0).split('#md5')[0]
+            break
 
-        pkg_regex = pkg_source.replace('.', '\\.')
-        regex = re.compile('.*/packages/(?P<hash>[a-f0-9]{2}/[a-f0-9]{2}/[a-f0-9]{60})/%s#md5.*' % pkg_regex, re.M)
-        for link in links:
-            res = regex.match(link)
-            if res:
-                # e.g. .../5b/03/e135b19fadeb9b1ccb45eac9f60ca2dc3afe72d099f6bd84e03cb131f9bf/easybuild-2.7.0.tar.gz
-                alt_pypi_url = 'https://pypi.python.org/packages/%s/%s' % (res.group('hash'), pkg_source)
-                break
-
-        if not alt_pypi_url:
-            _log.debug("Failed to extract hash using pattern '%s' from list of links: %s", regex.pattern, links)
+    if not alt_pypi_url:
+        _log.debug("Failed to extract hash using pattern '%s' from list of URLs: %s", regex.pattern, cand_urls)
 
     return alt_pypi_url
 
@@ -413,7 +466,7 @@ def download_file(filename, url, path, forced=False):
             # urllib2 does the right thing for http proxy setups, urllib does not!
             url_fd = urllib2.urlopen(url_req, timeout=timeout)
             _log.debug('response code for given url %s: %s' % (url, url_fd.getcode()))
-            write_file(path, url_fd.read(), forced=forced)
+            write_file(path, url_fd.read(), forced=forced, backup=True)
             _log.info("Downloaded file %s from url %s to %s" % (filename, url, path))
             downloaded = True
             url_fd.close()
@@ -688,49 +741,32 @@ def find_base_dir():
     return new_dir
 
 
-def extract_cmd(filepath, overwrite=False):
-    """
-    Determines the file type of file at filepath, returns extract cmd based on file suffix
-    """
-    filename = os.path.basename(filepath)
-
-    extract_cmds = {
-        # gzipped or gzipped tarball
-        '.gtgz':    "tar xzf %(filepath)s",
-        '.gz':      "gunzip -c %(filepath)s > %(target)s",
-        '.tar.gz':  "tar xzf %(filepath)s",
-        '.tgz':     "tar xzf %(filepath)s",
-        # bzipped or bzipped tarball
-        '.bz2':     "bunzip2 -c %(filepath)s > %(target)s",
-        '.tar.bz2': "tar xjf %(filepath)s",
-        '.tb2':     "tar xjf %(filepath)s",
-        '.tbz':     "tar xjf %(filepath)s",
-        '.tbz2':    "tar xjf %(filepath)s",
-        # xzipped or xzipped tarball
-        '.tar.xz':  "unxz %(filepath)s --stdout | tar x",
-        '.txz':     "unxz %(filepath)s --stdout | tar x",
-        '.xz':      "unxz %(filepath)s",
-        # tarball
-        '.tar':     "tar xf %(filepath)s",
-        # zip file
-        '.zip':     "unzip -qq -o %(filepath)s" if overwrite else "unzip -qq %(filepath)s",
-        # iso file
-        '.iso':     "7z x %(filepath)s",
-        # tar.Z: using compress (LZW)
-        '.tar.z':   "tar xZf %(filepath)s",
-    }
-
-    suffixes = sorted(extract_cmds.keys(), key=len, reverse=True)
-    pat = r'(?P<ext>%s)$' % '|'.join([ext.replace('.', '\\.') for ext in suffixes])
+def find_extension(filename):
+    """Find best match for filename extension."""
+    # sort by length, so longest file extensions get preference
+    suffixes = sorted(EXTRACT_CMDS.keys(), key=len, reverse=True)
+    pat = r'(?P<ext>%s)$' % '|'.join([s.replace('.', '\\.') for s in suffixes])
     res = re.search(pat, filename, flags=re.IGNORECASE)
     if res:
         ext = res.group('ext')
     else:
         raise EasyBuildError('Unknown file type for file %s', filename)
 
+    return ext
+
+
+def extract_cmd(filepath, overwrite=False):
+    """
+    Determines the file type of file at filepath, returns extract cmd based on file suffix
+    """
+    filename = os.path.basename(filepath)
+    ext = find_extension(filename)
     target = filename.rstrip(ext)
 
-    cmd_tmpl = extract_cmds[ext.lower()]
+    cmd_tmpl = EXTRACT_CMDS[ext.lower()]
+    if overwrite:
+        if 'unzip -qq' in cmd_tmpl:
+            cmd_tmpl = cmd_tmpl.replace('unzip -qq', 'unzip -qq -o')
 
     return cmd_tmpl % {'filepath': filepath, 'target': target}
 
@@ -879,7 +915,7 @@ def apply_patch(patch_file, dest, fn=None, copy=False, level=None):
         _log.debug("Using specified patch level %d for patch %s" % (level, patch_file))
 
     patch_cmd = "patch -b -p%s -i %s" % (level, apatch)
-    out, ec = run.run_cmd(patch_cmd, simple=False, path=adest, log_ok=False)
+    out, ec = run.run_cmd(patch_cmd, simple=False, path=adest, log_ok=False, trace=False)
 
     if ec:
         raise EasyBuildError("Couldn't apply patch file %s. Process exited with code %s: %s", patch_file, ec, out)
@@ -1184,12 +1220,12 @@ def find_backup_name_candidate(src_file):
 
 def back_up_file(src_file, backup_extension='bak', hidden=False):
     """
-    Backs up a file appending a backup extension and a number to it (if there is already an existing backup). Returns
-    the name of the backup
+    Backs up a file appending a backup extension and timestamp to it (if there is already an existing backup).
 
     :param src_file: file to be back up
     :param backup_extension: extension to use for the backup file (can be empty or None)
     :param hidden: make backup hidden (leading dot in filename)
+    :return: location of backed up file
     """
     fn_prefix, fn_suffix = '', ''
     if hidden:
