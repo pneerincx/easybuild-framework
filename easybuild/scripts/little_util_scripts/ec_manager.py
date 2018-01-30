@@ -10,8 +10,8 @@ from pprint import pprint
 #
 # This script is for managing a local collection of EasyConfig files
 # It can:
-#    - make a list so that they are orderd with programs listed after
-#            all of their dependiencies
+#    - make a list so that they are ordered with programs listed after
+#            all of their dependencies
 #
 #    - Copy EasyConfig files to a directory.
 #    - Suggest updates to dependency versions (from already-installed versions).
@@ -58,7 +58,7 @@ def main():
         description="Prints a list of applications in such an order that all "
                     "requirements occur in the list before their dependent applications. "
                     "The default is that the names of the EasyConfig files are listed.",
-        formatter_class=SmartFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('-c', '--catalog',
                         help='Catalog flatfile '
@@ -69,16 +69,15 @@ def main():
     parser.add_argument("tc_vers", help="Toolchain version")
     parser.add_argument("-t", "--tc_listfile",
                         help="R|Optionally supplied file with lists of "
-                        "sub-toolchains in which to chase dependencies. "
+                        "sub-toolchains in which to chase dependencies."
                         "Format should be:\n"
                         "<toolchain1> <version1>\n"
                         "<toolchain2> <version2>\n"
                         "<toolchain3> <version3>\n...\n"
                         "No effort is made to check any hierarchical "
                         "relationship between listed toolchains.")
-    parser.add_argument("-c", "--copydir",
-                        help="Directory to put a copy of EasyConfig files "
-                        "into. No copy is done if this argument is not given")
+    parser.add_argument("-d", "--copydir",
+                        help="Will copy all EasyConfig files found into the specified directory.")
     parser.add_argument("-l", "--long",
                         help="List the full path name to EasyConfig files. "
                         "Default is short name (no path). If the output "
@@ -88,7 +87,9 @@ def main():
     parser.add_argument("-T", "--toolchainfollow",
                         help="Consider an application's toolchain as a "
                         "dependency", action="store_true")
-
+    #
+    # Mutually exclusive args [-E | -U | -D | -R].
+    #
     outputgroup = parser.add_mutually_exclusive_group()
     outputgroup.add_argument("-E", "--ebfilelist",
                              help="Print an ordered list of EasyConfig files. "
@@ -102,13 +103,14 @@ def main():
                              help="Print an ordered table of applications and "
                              "their dependencies.",
                              action="store_true", default=False)
-
     outputgroup.add_argument("-R", "--roguetc",
                              help="Look for EasyConfig files where a "
                              "dependency is in an unlisted toolchain/version. "
                              "For verifying version updates.",
                              action="store_true", default=False)
-
+    #
+    # Mutually exclusive args [-a | -s].
+    #
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-a", "--allversions",
                        help="Report all versions of installed packages. "
@@ -118,11 +120,10 @@ def main():
                        help="Report only the highest version of installed "
                        "packages. Default.", action="store_true",
                        default=False)
-
     args = parser.parse_args()
 
-    if(args.dbfile):
-        easybuild_catalog = args.dbfile
+    if(args.catalog):
+        easybuild_catalog = args.catalog
 
     dest_dir = ""
     if(args.copydir):
