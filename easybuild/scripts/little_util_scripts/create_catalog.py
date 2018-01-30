@@ -197,7 +197,7 @@ def parse_eb_file(easyconfig):
     #
     # Sanity check for common mistakes.
     #
-    sanity_check(easyconfig, app_vers, app_vers_suffix)
+    sanity_check(easyconfig, app_name, app_vers, app_vers_suffix)
     #
     # Return app dict
     #
@@ -229,7 +229,7 @@ def format_deps(easyconfig, deps, app_tc_name, app_tc_vers):
                 else:
                     dep_tc_name = deps[i][3][0]
                     dep_tc_vers = deps[i][3][1]
-        sanity_check(easyconfig, dep_vers, dep_vers_suffix)
+        sanity_check(easyconfig, dep_name, dep_vers, dep_vers_suffix)
         app_dict = {'app_name': dep_name, 'app_vers': dep_vers, 'app_vers_suffix': dep_vers_suffix,
                     'tc_name': dep_tc_name, 'tc_vers': dep_tc_vers}
         dependencies.append(app_dict)
@@ -237,19 +237,21 @@ def format_deps(easyconfig, deps, app_tc_name, app_tc_vers):
     return dependencies
 
 
-def sanity_check(easyconfig, vers, vers_suffix):
+def sanity_check(easyconfig, name, vers, vers_suffix):
     #
     # Sanity check for common mistakes:
     #  * tool chain must be listed as tool chain
     #    and not as part of the version number nor as version suffix.
     if ('foss' in vers) or ('goolf' in vers):
-        logging.error('Toolchain erroneously listed '
-                      'in the version ' + vers +
-                      ' of easyconfig ' + easyconfig + '.')
+        logging.error('Toolchain erroneously listed'
+                      ' in the version ' + vers +
+                      ' of app ' + name +
+                      ' in easyconfig ' + easyconfig + '.')
     if ('foss' in vers_suffix) or ('goolf' in vers_suffix):
-        logging.error('Toolchain erroneously listed '
-                      'in the version suffix ' + vers_suffix +
-                      ' of easyconfig ' + easyconfig + '.')
+        logging.error('Toolchain erroneously listed'
+                      ' in the version suffix ' + vers_suffix +
+                      ' of app ' + name +
+                      ' in easyconfig ' + easyconfig + '.')
 
 
 if __name__ == "__main__":
