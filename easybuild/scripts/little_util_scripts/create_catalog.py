@@ -90,11 +90,11 @@ def main():
                         format='%(levelname)+8s:: %(filename)s:%(lineno)d %(message)s')
     logging.info('Started...')
     #
-    # Get topdir.
+    # Get top_dir.
     #
-    top = args.topdir
-    if isinstance(top, basestring) and os.path.isdir(top):
-        logging.info('Searching for installed easyconfigs in ' + top + '...')
+    top_dir = args.top_dir
+    if isinstance(top_dir, basestring) and os.path.isdir(top_dir):
+        logging.info('Searching for installed easyconfigs in ' + top_dir + '...')
     else:
         logging.critical('Please provide a search path using either '
                          'the EASYBUILD_INSTALLPATH environment variable or'
@@ -121,7 +121,7 @@ def main():
     easyconfigs_parsed = 0
     exclude = set(['EasyBuild', 'eb'])
     exclude_sstr = ".sys."
-    for root, dirs, files in os.walk(top, topdown=True):
+    for root, dirs, files in os.walk(top_dir, topdown=True):
         dirs[:] = [d for d in dirs if d not in exclude]
         for name in files:
             # the exclude_sstr part should be improved
